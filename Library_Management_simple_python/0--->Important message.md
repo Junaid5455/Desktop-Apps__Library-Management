@@ -4,4 +4,4 @@
 
 >>>   "5---python_code_JSON-file.ino" stores data parmanantly in an JSON file but this code runs only on python so it cannot be able to build App.
 
->>>   But if you run rest of the three codes including "Tkinter GUI Code" in your Python or by making exe file, a fully operational desktop App(without internet) will get opened. So all "Tkinter GUI Codes" are actually App builders.
+>>>   But if you run rest of the three codes containing "Tkinter GUI Code" in your Python or by making exe file, a fully operational desktop App(without internet) will get opened. So all "Tkinter GUI Codes" are actually App builders.
