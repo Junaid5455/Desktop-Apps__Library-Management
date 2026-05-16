@@ -2,92 +2,227 @@ import json
 import os
 from datetime import date, timedelta, datetime
 
-
-# ─────────────────────────── FILE PATHS ────────────────────────────
-BOOKS_FILE        = "books.json"
-MEMBERS_FILE      = "members.json"
-TRANSACTIONS_FILE = "transactions.json"
+# ─────────────────────────────────────────────────────────────
+#  JSON FILE PATHS  (created automatically in same folder)
+# ─────────────────────────────────────────────────────────────
+BOOKS_FILE          = "books.json"
+MEMBERS_FILE        = "members.json"
+TRANSACTIONS_FILE   = "transactions.json"
 BORROW_RECORDS_FILE = "borrow_records.json"
 
 
-# ──────────────────────── JSON HELPERS ─────────────────────────────
-
+# ─────────────────────────────────────────────────────────────
+#  JSON HELPER FUNCTIONS
+# ─────────────────────────────────────────────────────────────
 def load_json(filepath):
-    """Load data from a JSON file. Returns empty list if file doesn't exist."""
-    if os.path.exists(filepath):
+    """
+    Load a JSON file and return its contents as a list.
+    If the file does not exist, returns [].
+    If the file is corrupted/has wrong format, deletes it and returns [].
+    """
+    if not os.path.exists(filepath):
+        return []
+    try:
         with open(filepath, "r") as f:
-            return json.load(f)
-    return []
+            data = json.load(f)
+        if isinstance(data, list):
+            return data
+        # File exists but is not a list – reset it
+        print(f"Warning: '{filepath}' had unexpected format and was reset.")
+        os.remove(filepath)
+        return []
+    except (json.JSONDecodeError, ValueError):
+        print(f"Warning: '{filepath}' was corrupted and has been reset.")
+        os.remove(filepath)
+        return []
 
 
 def save_json(filepath, data):
-    """Save data to a JSON file."""
+    """Save a list of dicts to a JSON file."""
     with open(filepath, "w") as f:
-        json.dump(data, f, indent=4, default=str)
+        json.dump(data, f, indent=4)
 
 
-# ──────────────────────── DATA MODELS ──────────────────────────────
-# Instead of class instances, every record is a plain Python dict
-# that maps directly to a JSON object.
-#
-# Book dict structure:
-#   { "book_id", "title", "author", "genre",
-#     "quantity", "available_quantity", "borrow_quantity" }
-#
-# Member dict structure:
-#   { "member_id", "name", "phone", "type", "borrowed_books": [] }
-#
-# Transaction / Borrow_Record dict structure:
-#   { "Transaction_ID", "member_id", "book_id",
-#     "Borrow_Date", "Due_Date" }
+# ─────────────────────────────────────────────────────────────
+#  MODEL CLASSES
+# ─────────────────────────────────────────────────────────────
+
+class Book:
+    def __init__(self, book_id, title, author, genre,
+                 total_quantity, available_quantity, borrow_quantity):
+        self.book_id            = book_id
+        self.title              = title
+        self.author             = author
+        self.genre              = genre
+        self.quantity           = total_quantity
+        self.available_quantity = available_quantity
+        self.borrow_quantity    = borrow_quantity
+
+    def __str__(self):
+        return (f"{self.book_id} | {self.title} | {self.author} | {self.genre} | "
+                f"Total:{self.quantity} | Available:{self.available_quantity} | "
+                f"Borrowed:{self.borrow_quantity}")
+
+    # Convert object → dict for JSON saving
+    def to_dict(self):
+        return {
+            "book_id":            self.book_id,
+            "title":              self.title,
+            "author":             self.author,
+            "genre":              self.genre,
+            "quantity":           self.quantity,
+            "available_quantity": self.available_quantity,
+            "borrow_quantity":    self.borrow_quantity,
+        }
+
+    # Rebuild object from dict loaded from JSON
+    @staticmethod
+    def from_dict(d):
+        return Book(
+            d.get("book_id",            "UNKNOWN"),
+            d.get("title",              "Unknown Title"),
+            d.get("author",             "Unknown Author"),
+            d.get("genre",              "Unknown"),
+            d.get("quantity",           0),
+            d.get("available_quantity", 0),
+            d.get("borrow_quantity",    0),
+        )
 
 
-def book_str(b):
-    return (f"{b['book_id']} | {b['title']} | {b['author']} | "
-            f"{b['genre']} | {b['quantity']} | "
-            f"{b['available_quantity']} | {b['borrow_quantity']}")
+class Member:
+    def __init__(self, member_id, name, phone, member_type, borrowed_books=None):
+        self.member_id      = member_id
+        self.name           = name
+        self.phone          = phone
+        self.type           = member_type
+        self.borrowed_books = borrowed_books if borrowed_books is not None else []
+
+    def __str__(self):
+        return (f"{self.member_id} | {self.name} | {self.phone} | "
+                f"{self.type} | Borrowed: {len(self.borrowed_books)}")
+
+    def to_dict(self):
+        return {
+            "member_id":      self.member_id,
+            "name":           self.name,
+            "phone":          self.phone,
+            "type":           self.type,
+            "borrowed_books": self.borrowed_books,
+        }
+
+    @staticmethod
+    def from_dict(d):
+        return Member(
+            d.get("member_id",      "UNKNOWN"),
+            d.get("name",           "Unknown"),
+            d.get("phone",          ""),
+            d.get("type",           "Standard"),
+            d.get("borrowed_books", []),
+        )
 
 
-def member_str(m):
-    return (f"{m['member_id']} | {m['name']} | {m['phone']} | "
-            f"{m['type']} | Borrowed: {len(m['borrowed_books'])}")
+class Transaction:
+    def __init__(self, Transaction_ID, member_id, book_id, Borrow_Date, Due_Date):
+        self.Transaction_ID = Transaction_ID
+        self.member_id      = member_id
+        self.book_id        = book_id
+        self.Borrow_Date    = Borrow_Date   # always stored as "YYYY-MM-DD" string
+        self.Due_Date       = Due_Date      # always stored as "YYYY-MM-DD" string
+
+    def __str__(self):
+        return (f"{self.Transaction_ID} | {self.member_id} | {self.book_id} | "
+                f"{self.Borrow_Date} | {self.Due_Date}")
+
+    def to_dict(self):
+        return {
+            "Transaction_ID": self.Transaction_ID,
+            "member_id":      self.member_id,
+            "book_id":        self.book_id,
+            "Borrow_Date":    str(self.Borrow_Date),
+            "Due_Date":       str(self.Due_Date),
+        }
+
+    @staticmethod
+    def from_dict(d):
+        return Transaction(
+            d.get("Transaction_ID", "UNKNOWN"),
+            d.get("member_id",      "UNKNOWN"),
+            d.get("book_id",        "UNKNOWN"),
+            d.get("Borrow_Date",    "1900-01-01"),
+            d.get("Due_Date",       "1900-01-01"),
+        )
 
 
-def transaction_str(t):
-    return (f"{t['Transaction_ID']} | {t['member_id']} | "
-            f"{t['book_id']} | {t['Borrow_Date']} | {t['Due_Date']}")
+class Borrow_Records:
+    def __init__(self, Transaction_ID, member_id, book_id, Borrow_Date, Due_Date):
+        self.Transaction_ID = Transaction_ID
+        self.member_id      = member_id
+        self.book_id        = book_id
+        self.Borrow_Date    = Borrow_Date   # always stored as "YYYY-MM-DD" string
+        self.Due_Date       = Due_Date      # always stored as "YYYY-MM-DD" string
+
+    def __str__(self):
+        return (f"{self.Transaction_ID} | {self.member_id} | {self.book_id} | "
+                f"{self.Borrow_Date} | {self.Due_Date}")
+
+    def to_dict(self):
+        return {
+            "Transaction_ID": self.Transaction_ID,
+            "member_id":      self.member_id,
+            "book_id":        self.book_id,
+            "Borrow_Date":    str(self.Borrow_Date),
+            "Due_Date":       str(self.Due_Date),
+        }
+
+    @staticmethod
+    def from_dict(d):
+        return Borrow_Records(
+            d.get("Transaction_ID", "UNKNOWN"),
+            d.get("member_id",      "UNKNOWN"),
+            d.get("book_id",        "UNKNOWN"),
+            d.get("Borrow_Date",    "1900-01-01"),
+            d.get("Due_Date",       "1900-01-01"),
+        )
 
 
-# ──────────────────────── ACTIONS CLASS ────────────────────────────
+# ─────────────────────────────────────────────────────────────
+#  ACTIONS CLASS  –  all business logic lives here
+# ─────────────────────────────────────────────────────────────
 
 class Actions:
+    def __init__(self):
+        # Load previously saved data from JSON files on every startup
+        self.books          = [Book.from_dict(d)          for d in load_json(BOOKS_FILE)]
+        self.members        = [Member.from_dict(d)        for d in load_json(MEMBERS_FILE)]
+        self.transactions   = [Transaction.from_dict(d)   for d in load_json(TRANSACTIONS_FILE)]
+        self.borrow_records = [Borrow_Records.from_dict(d)for d in load_json(BORROW_RECORDS_FILE)]
 
-    # ── internal helpers ──────────────────────────────────────────
+    # ── private save helpers ──────────────────────────────────
+    def _save_books(self):
+        save_json(BOOKS_FILE, [b.to_dict() for b in self.books])
 
-    def _books(self):
-        return load_json(BOOKS_FILE)
+    def _save_members(self):
+        save_json(MEMBERS_FILE, [m.to_dict() for m in self.members])
 
-    def _members(self):
-        return load_json(MEMBERS_FILE)
+    def _save_transactions(self):
+        save_json(TRANSACTIONS_FILE, [t.to_dict() for t in self.transactions])
 
-    def _transactions(self):
-        return load_json(TRANSACTIONS_FILE)
+    def _save_borrow_records(self):
+        save_json(BORROW_RECORDS_FILE, [br.to_dict() for br in self.borrow_records])
 
-    def _borrow_records(self):
-        return load_json(BORROW_RECORDS_FILE)
-
-    # ── book management ───────────────────────────────────────────
+    # ══════════════════════════════════════════════════════════
+    #  BOOK MANAGEMENT
+    # ══════════════════════════════════════════════════════════
 
     def add_book(self):
-        books = self._books()
-
         title          = input("Enter Title: ")
         author         = input("Enter Author: ")
         total_quantity = int(input("Enter Quantity: "))
         available_quantity = total_quantity
-        borrow_quantity    = total_quantity - available_quantity
+        borrow_quantity    = 0          # nothing borrowed yet
 
-        book_id = f"BK00{len(books) + 1}"
+        total_books = len(self.books)
+        book_id     = f"BK00{total_books + 1}"
 
         print("Now select Genre")
         print("1. Fiction")
@@ -95,424 +230,436 @@ class Actions:
         print("3. Science")
         print("4. History")
         print("5. Technology")
-        choice = input("Choose the Genre type: ")
-        genre_map = {"1": "Fiction", "2": "Non-Fiction",
-                     "3": "Science", "4": "History", "5": "Technology"}
-        genre = genre_map.get(choice, "Unknown")
+        genre_choice = input("Choose the Genre type: ")
 
-        book = {
-            "book_id"           : book_id,
-            "title"             : title,
-            "author"            : author,
-            "genre"             : genre,
-            "quantity"          : total_quantity,
-            "available_quantity": available_quantity,
-            "borrow_quantity"   : borrow_quantity
+        genre_map = {
+            "1": "Fiction",
+            "2": "Non-Fiction",
+            "3": "Science",
+            "4": "History",
+            "5": "Technology",
         }
-        books.append(book)
-        save_json(BOOKS_FILE, books)
+        genre = genre_map.get(genre_choice, "Unknown")
+
+        self.books.append(Book(book_id, title, author, genre,
+                               total_quantity, available_quantity, borrow_quantity))
+        self._save_books()
         print("✅ Book added successfully!")
 
     def view_book(self):
-        books = self._books()
-        if not books:
+        if not self.books:
             print("No books available.")
             return
-        for b in books:
-            print(book_str(b))
+        for book in self.books:
+            print(book)
 
     def update_quantity(self):
-        books = self._books()
-        ID    = input("Enter the Book ID to know its quantity: ")
         found = False
-        for b in books:
-            if ID in b["book_id"]:
+        ID = input("Enter the Book ID to know its quantity: ")
+        for book in self.books:
+            if ID in book.book_id:
                 found = True
-                print(b["quantity"])
+                print(f"Total: {book.quantity} | "
+                      f"Available: {book.available_quantity} | "
+                      f"Borrowed: {book.borrow_quantity}")
         if not found:
-            print("😠 You have entered wrong ID")
+            print("😠 You have entered a wrong ID")
 
     def remove_book(self):
-        books = self._books()
-        ID    = input("Enter the Book ID to remove: ")
-        save  = None
-        for b in books:
-            if ID in b["book_id"]:
-                save = b
+        ID   = input("Enter the Book ID to remove: ")
+        save = None
+        for book in self.books:
+            if ID in book.book_id:
+                save = book
+                break
         if save:
-            books.remove(save)
-            save_json(BOOKS_FILE, books)
+            self.books.remove(save)
+            self._save_books()
             print("Book removed from Library")
         else:
-            print("Book ID not found.")
+            print("❌ Book ID not found.")
 
-    # ── member management ─────────────────────────────────────────
+    # ══════════════════════════════════════════════════════════
+    #  MEMBER MANAGEMENT
+    # ══════════════════════════════════════════════════════════
 
     def add_member(self):
-        members = self._members()
-
         y1 = input("Enter Member's name: ")
-        y2 = input("Enter his mobile number: ")
+        y2 = input("Enter mobile number: ")
         print("Select membership type")
-        print("1.  Standard (Max 2 books, 14 days)")
-        print("2.  Premium  (Max 5 books, 30 days)")
-        y3 = int(input("Enter choice (1-2): "))
-        membership = "Standard" if y3 == 1 else "Premium"
+        print("1.  Standard (Max 2 books, 7 days)")
+        print("2.  Premium  (Max 5 books, 7 days)")
+        y3 = input("Enter choice (1-2): ")
 
-        member_num = len(members) + 1
-        member_id  = f"MEM00{member_num}"
+        if y3 == "1":
+            membership = "Standard"
+        elif y3 == "2":
+            membership = "Premium"
+        else:
+            print("❌ Invalid choice. Defaulting to Standard.")
+            membership = "Standard"
 
-        member = {
-            "member_id"    : member_id,
-            "name"         : y1,
-            "phone"        : y2,
-            "type"         : membership,
-            "borrowed_books": []
-        }
-        members.append(member)
-        save_json(MEMBERS_FILE, members)
+        member_number = len(self.members) + 1
+        y4 = f"MEM00{member_number}"
 
         print("------------------------------------------")
         print("✓ Member registered successfully!")
-        print(f"Member ID: = {member_id}")
-        print("Name: ",  y1)
-        print("Phone: ", y2)
-        print("Type: ",  membership)
-        print("Borrowed Books", [])
-        print("Status: Active")
+        print(f"Member ID : {y4}")
+        print(f"Name      : {y1}")
+        print(f"Phone     : {y2}")
+        print(f"Type      : {membership}")
+        print(f"Borrowed  : []")
+        print("Status    : Active")
         print("-----------------------------------------")
 
+        self.members.append(Member(y4, y1, y2, membership))
+        self._save_members()
+
     def view_member(self):
-        members = self._members()
-        if not members:
+        if not self.members:
             print("No members available.")
             return
-        for m in members:
-            print(member_str(m))
+        for member in self.members:
+            print(member)
 
     def update_member(self):
-        members = self._members()
-        ID = input("Enter Member ID to be updated: ")
-        for m in members:
-            if ID in m["member_id"]:
-                print(member_str(m))
+        ID    = input("Enter Member ID to view details: ")
+        found = False
+        for mem in self.members:
+            if ID in mem.member_id:
+                print(mem)
+                found = True
+        if not found:
+            print("❌ Member ID not found.")
 
     def remove_member(self):
-        members = self._members()
         ID   = input("Enter Member ID to be removed: ")
         save = None
-        for m in members:
-            if ID in m["member_id"]:
-                save = m
+        for mem in self.members:
+            if ID in mem.member_id:
+                save = mem
+                break
         if save:
-            members.remove(save)
-            save_json(MEMBERS_FILE, members)
+            self.members.remove(save)
+            self._save_members()
             print("Member has been removed")
         else:
-            print("Member ID not found.")
+            print("❌ Member ID not found.")
 
-    # ── borrow / return ───────────────────────────────────────────
+    # ══════════════════════════════════════════════════════════
+    #  BORROW & RETURN
+    # ══════════════════════════════════════════════════════════
 
     def borrow_book(self):
-        members        = self._members()
-        books          = self._books()
-        transactions   = self._transactions()
-        borrow_records = self._borrow_records()
-
         today    = date.today()
         due_date = today + timedelta(days=7)
-        txn_num  = len(transactions) + 1
-        txn_id   = f" TXN00{txn_num}"
+        z3 = len(self.transactions) + 1
+        z4 = f"TXN00{z3}"
 
-        m1 = False
-        b1 = False
+        # Validate member
         z1 = input("Enter your Member ID: ")
-
-        member_obj = None
-        for m in members:
-            if z1 == m["member_id"]:
-                m1 = True
-                member_obj = m
+        found_member = None
+        for m in self.members:
+            if z1 == m.member_id:
+                found_member = m
                 break
 
-        if not m1:
+        if found_member is None:
             print("Member not registered")
             return
 
+        # Validate book
         z2 = input("Enter Book ID you require: ")
-        book_obj = None
-        for b in books:
-            if z2 == b["book_id"]:
-                b1 = True
-                book_obj = b
+        found_book = None
+        for b in self.books:
+            if z2 == b.book_id:
+                found_book = b
                 break
 
-        if not b1:
+        if found_book is None:
             print("This book doesn't exist")
             return
 
-        Name = member_obj["name"]
-        Type = member_obj["type"]
-        z5   = member_obj["borrowed_books"]
+        # Check availability
+        if int(found_book.available_quantity) <= 0:
+            print("❌ No available copies of this book right now.")
+            return
 
-        limit = 2 if Type == "Standard" else 4
+        # Check member borrow limit
+        Name  = found_member.name
+        Type  = found_member.type
+        z5    = found_member.borrowed_books
+        limit = 2 if Type == "Standard" else 5
 
-        if int(book_obj["available_quantity"]) > 0:
-            if len(z5) < limit:
-                book_obj["available_quantity"] = int(book_obj["available_quantity"]) - 1
-                book_obj["borrow_quantity"]    = int(book_obj["borrow_quantity"])    + 1
-                z5.append(z2)
+        if len(z5) >= limit:
+            print("Your limit reached. No further book can be issued.")
+            print(f"You already have {len(z5)} book(s) in your account.")
+            print("-------------------------------------------------")
+            return
 
-                print("✓ Book added successfully!")
-                print("----------Borrowing Receipt-------------")
-                print("Member Name: ",      Name)
-                print("Membership Type: ",  Type)
-                print(f"Transaction ID: = {txn_id}")
-                print("Registered book is: ", book_obj["title"])
-                print("Borrow date: ", today)
-                print("Due date: ",    due_date)
-                print(f"You have {len(z5)} books in your account now")
-                print("-------------------------------------------------")
+        # All checks passed – process borrow
+        found_book.available_quantity = int(found_book.available_quantity) - 1
+        found_book.borrow_quantity    = int(found_book.borrow_quantity) + 1
+        z5.append(z2)
 
-                transaction = {
-                    "Transaction_ID": txn_id,
-                    "member_id"     : z1,
-                    "book_id"       : z2,
-                    "Borrow_Date"   : str(today),
-                    "Due_Date"      : str(due_date)
-                }
-                transactions.append(transaction)
-                borrow_records.append(transaction)
+        print("✓ Book borrowed successfully!")
+        print("----------Borrowing Receipt-------------")
+        print(f"Member Name      : {Name}")
+        print(f"Membership Type  : {Type}")
+        print(f"Transaction ID   : {z4}")
+        print(f"Book Borrowed    : {found_book.title}")
+        print(f"Borrow Date      : {today}")
+        print(f"Due Date         : {due_date}")
+        print(f"Books in account : {len(z5)}")
+        print("-------------------------------------------------")
 
-                # persist all changes
-                save_json(BOOKS_FILE,          books)
-                save_json(MEMBERS_FILE,        members)
-                save_json(TRANSACTIONS_FILE,   transactions)
-                save_json(BORROW_RECORDS_FILE, borrow_records)
+        # Store dates as strings so JSON can save them
+        self.transactions.append(
+            Transaction(z4, z1, z2, str(today), str(due_date)))
+        self.borrow_records.append(
+            Borrow_Records(z4, z1, z2, str(today), str(due_date)))
 
-            else:
-                print("Your limit reached. No further book can be issued")
-                print(f"You already have {len(z5)} books in your account")
-                print("-------------------------------------------------")
-        else:
-            print("Sorry, no available copies of this book.")
+        self._save_books()
+        self._save_members()
+        self._save_transactions()
+        self._save_borrow_records()
 
     def return_book(self):
-        members        = self._members()
-        books          = self._books()
-        borrow_records = self._borrow_records()
-
         z6          = input("Enter Member ID: ")
         z7          = input("Enter Book ID: ")
         Fine_per_day = 10
         today1      = date.today()
 
-        print("✓ Book returned successfully!----------")
-        print("--------RETURN RECEIPT ---------")
-
+        # Find matching borrow record (must match BOTH member and book)
         save = None
-        for BR in borrow_records:
-            if BR["member_id"] == z6:
-                duedate  = datetime.strptime(BR["Due_Date"],    "%Y-%m-%d").date()
-                borrowdate = datetime.strptime(BR["Borrow_Date"], "%Y-%m-%d").date()
-                DT = (today1 - duedate).days
-
-                print(f"Transaction ID : {BR['Transaction_ID']}")
-                print(f"Member         : {BR['member_id']}")
-                print(f"Book           : {BR['book_id']}")
-                print(f"Borrow Date    : {BR['Borrow_Date']}")
-                print(f"Due Date       : {BR['Due_Date']}")
-                print(f"Return Date    : {today1}")
-                print("Days Borrowed  : ", 7)
-                print("Days Taken     : ", DT)
+        for BR in self.borrow_records:
+            if BR.member_id == z6 and BR.book_id == z7:
                 save = BR
+                break
 
-                if DT <= 0:
-                    print("Status         : Returned on time")
-                    print("Fine Amount    : Rs. 0")
-                else:
-                    print("Status: ", DT, "days Late returning")
-                    print("Fine: Rs", DT * Fine_per_day)
+        if save is None:
+            print("❌ No active borrow record found for this Member ID + Book ID.")
+            return
 
-        if save:
-            borrow_records.remove(save)
-            save_json(BORROW_RECORDS_FILE, borrow_records)
+        # Parse date strings back to date objects for arithmetic
+        duedate    = datetime.strptime(save.Due_Date,    "%Y-%m-%d").date()
+        borrowdate = datetime.strptime(save.Borrow_Date, "%Y-%m-%d").date()
+        DT         = (today1 - duedate).days
+        days_taken = (today1 - borrowdate).days
 
-        for m in members:
-            if z6 == m["member_id"]:
-                if z7 in m["borrowed_books"]:
-                    m["borrowed_books"].remove(z7)
-                print(f"{z7} has been removed from record of {z6}")
-                print(m["borrowed_books"])
-                print(f"Now {z6} has {len(m['borrowed_books'])} books")
+        print("✓ Book returned successfully!")
+        print("-------- RETURN RECEIPT ---------")
+        print(f"Transaction ID : {save.Transaction_ID}")
+        print(f"Member         : {save.member_id}")
+        print(f"Book           : {save.book_id}")
+        print(f"Borrow Date    : {save.Borrow_Date}")
+        print(f"Due Date       : {save.Due_Date}")
+        print(f"Return Date    : {today1}")
+        print(f"Days Borrowed  : 7")
+        print(f"Days Taken     : {days_taken}")
+
+        if DT <= 0:
+            print("Status         : Returned on time")
+            print("Fine Amount    : Rs. 0")
+        else:
+            print(f"Status         : {DT} days late")
+            print(f"Fine           : Rs. {DT * Fine_per_day}")
+
+        # Remove from active borrow records
+        self.borrow_records.remove(save)
+
+        # Remove book from member's borrowed list
+        for m in self.members:
+            if z6 == m.member_id:
+                if z7 in m.borrowed_books:
+                    m.borrowed_books.remove(z7)
+                print(f"{z7} removed from {z6}'s record")
+                print(f"Remaining books: {m.borrowed_books}")
+                print(f"Now {z6} has {len(m.borrowed_books)} book(s)")
                 print("------------------------------------------------")
-                print(f"You still have {m['borrowed_books']} in your account")
-        save_json(MEMBERS_FILE, members)
+                break
 
-        for b in books:
-            if b["book_id"] == z7:
-                b["available_quantity"] = int(b["available_quantity"]) + 1
-                b["borrow_quantity"]    = int(b["borrow_quantity"])    - 1
-        save_json(BOOKS_FILE, books)
+        # Update book availability
+        for b in self.books:
+            if b.book_id == z7:
+                b.available_quantity = int(b.available_quantity) + 1
+                b.borrow_quantity    = int(b.borrow_quantity) - 1
+                break
+
+        self._save_books()
+        self._save_members()
+        self._save_borrow_records()
 
     def active_borrowings(self):
-        borrow_records = self._borrow_records()
+        record_found = False
         z8 = input("Enter your Member ID to see your Borrowed Record: ")
         print("Your Borrow Record is given below")
-        record_found = False
-        for BR in borrow_records:
-            if z8 == BR["member_id"]:
+        for BR in self.borrow_records:
+            if z8 == BR.member_id:
                 record_found = True
-                print(transaction_str(BR))
+                print(BR)
         if not record_found:
             print("You don't have any book in your Borrow Record")
 
     def check_overdue(self):
-        borrow_records = self._borrow_records()
         today2 = date.today()
-        z9 = input("Enter your Member ID to check Your OVERDUE Record: ")
-        for BR in borrow_records:
-            if z9 == BR["member_id"]:
-                print(f"{BR['book_id']} is found in your borrow record")
-                borrowdate = datetime.strptime(BR["Borrow_Date"], "%Y-%m-%d").date()
-                duedate    = datetime.strptime(BR["Due_Date"],    "%Y-%m-%d").date()
+        z9 = input("Enter your Member ID to check your OVERDUE Record: ")
+        found = False
+        for BR in self.borrow_records:
+            if z9 == BR.member_id:
+                found = True
+                print(f"{BR.book_id} is found in your borrow record")
+                # Dates are strings in JSON – convert before arithmetic
+                borrowdate = datetime.strptime(BR.Borrow_Date, "%Y-%m-%d").date()
+                duedate    = datetime.strptime(BR.Due_Date,    "%Y-%m-%d").date()
 
                 total_days = (today2 - borrowdate).days
                 Extra_days = (today2 - duedate).days
                 days_left  = (duedate - today2).days
 
                 print(f"You have taken {total_days} days till now")
-                if duedate >= today2:
-                    print(f"You have {days_left} days left now")
-                else:
-                    print(f"You have taken {Extra_days} extra days till now")
-                    print(f"Fine till today: {(today2 - duedate).days * 10}")
 
-    # ── reports & statistics ──────────────────────────────────────
+                if duedate >= today2:
+                    print(f"You have {days_left} day(s) left")
+                else:
+                    print(f"You have taken {Extra_days} extra days")
+                    print(f"Fine till today: Rs. {Extra_days * 10}")
+        if not found:
+            print("No borrow record found for this Member ID.")
+
+    # ══════════════════════════════════════════════════════════
+    #  REPORTS & STATISTICS
+    # ══════════════════════════════════════════════════════════
 
     def library_summery(self):
-        books          = self._books()
-        members        = self._members()
-        transactions   = self._transactions()
-        borrow_records = self._borrow_records()
-
         Total_Copies = []
         Standard     = []
         Premium      = []
+        print("Books Summary:")
+        print(f"Total Book Titles in Library : {len(self.books)}")
 
-        print("Books Summary is given below:")
-        print(f"Total Book-Titles in Library are {len(books)}")
+        for b in self.books:
+            print(f"  {b.title} — {b.quantity} copies registered")
+            bk = sum(1 for BR in self.borrow_records if BR.book_id == b.book_id)
+            print(f"    Available copies: {b.quantity - bk}")
+            Total_Copies.append(b.quantity)
 
-        for b in books:
-            print(f"{b['title']} has {b['quantity']} copies registered in library")
-            bk = sum(1 for BR in borrow_records if BR["book_id"] == b["book_id"])
-            print(f"Available copies of {b['title']} are {b['quantity'] - bk}")
-            Total_Copies.append(b["quantity"])
-
-        print(f"Total Copies in library are {sum(Total_Copies)}")
-        print(f"Currently Borrowed Copies are: {len(borrow_records)}")
+        print(f"Total Copies in Library    : {sum(Total_Copies)}")
+        print(f"Currently Borrowed Copies  : {len(self.borrow_records)}")
         print("---------------------------------------------")
-        print(f"Total Registered Members are: {len(members)}")
+        print(f"Total Registered Members   : {len(self.members)}")
 
-        for m in members:
-            if m["type"] == "Standard":
-                Standard.append(m["name"])
+        for m in self.members:
+            if m.type == "Standard":
+                Standard.append(m.name)
             else:
-                Premium.append(m["name"])
+                Premium.append(m.name)
 
-        print(f"Total Standard Members are: {len(Standard)}")
-        print(f"Total Premium Members are: {len(Premium)}")
+        print(f"Standard Members           : {len(Standard)}")
+        print(f"Premium Members            : {len(Premium)}")
         print("----------------------------------------------------------")
-        print(f"Total Transactions made in whole history are: {len(transactions)}")
-        print(f"Active Borrowings are: {len(borrow_records)}")
-        print(f"Completed returns are: {len(transactions) - len(borrow_records)}")
+        print(f"Total Transactions (all time) : {len(self.transactions)}")
+        print(f"Active Borrowings             : {len(self.borrow_records)}")
+        print(f"Completed Returns             : {len(self.transactions) - len(self.borrow_records)}")
 
     def popular_books(self):
-        transactions = self._transactions()
-        IDs = [record["book_id"] for record in transactions]
+        IDs = [record.book_id for record in self.transactions]
         if not IDs:
-            print("No Book still borrowed in library")
+            print("No book has been borrowed yet in this library")
         else:
             most_repeated = max(set(IDs), key=IDs.count)
-            print(f"Most popular book is {most_repeated}")
+            title = most_repeated
+            for b in self.books:
+                if b.book_id == most_repeated:
+                    title = b.title
+                    break
+            print(f"Most popular book: {title} ({most_repeated})")
 
     def popular_member(self):
-        transactions = self._transactions()
-        IDs = [record["member_id"] for record in transactions]
+        IDs = [record.member_id for record in self.transactions]
         if not IDs:
-            print("No Member still borrowed any book in library")
+            print("No member has borrowed any book yet")
         else:
             most_repeated = max(set(IDs), key=IDs.count)
-            print(f"Most popular Member is {most_repeated}")
+            name = most_repeated
+            for m in self.members:
+                if m.member_id == most_repeated:
+                    name = m.name
+                    break
+            print(f"Most active member: {name} ({most_repeated})")
 
     def genre_wise(self):
-        books = self._books()
-        genres = ["Fiction", "Non-Fiction", "Science", "History", "Technology"]
-        genre_dict = {}
-        print("Genre:           Count       Percentage")
-        for g in genres:
-            count = sum(1 for b in books if b["genre"] == g)
-            genre_dict[g] = count
-            pct = int(count / len(books) * 100) if books else 0
-            print(f"{g}         {count}            {pct}")
+        genre_list = ["Fiction", "Non-Fiction", "Science", "History", "Technology"]
+        total      = len(self.books) if self.books else 1   # avoid division by zero
+
+        print(f"{'Genre':<15} {'Count':<10} {'Percentage'}")
+        print("-" * 35)
+        for g in genre_list:
+            m1         = sum(1 for b in self.books if b.genre == g)
+            percentage = round((m1 / total) * 100, 1)
+            print(f"{g:<15} {m1:<10} {percentage}%")
 
     def monthly_borrow_report(self):
-        transactions = self._transactions()
-        a1 = int(input("Enter Year whose transaction record you need: "))
-        a2 = int(input("Enter Month whose transaction record you need: "))
-        for record in transactions:
-            borrowdate = datetime.strptime(record["Borrow_Date"], "%Y-%m-%d").date()
+        a1 = int(input("Enter Year (e.g. 2025): "))
+        a2 = int(input("Enter Month (1-12): "))
+        found = False
+        for record in self.transactions:
+            # Dates stored as strings – parse for comparison
+            borrowdate = datetime.strptime(record.Borrow_Date, "%Y-%m-%d").date()
             if borrowdate.year == a1 and borrowdate.month == a2:
-                print(transaction_str(record))
+                print(record)
+                found = True
+        if not found:
+            print("No transactions found for that month/year.")
 
-    # ── search ────────────────────────────────────────────────────
+    # ══════════════════════════════════════════════════════════
+    #  SEARCH
+    # ══════════════════════════════════════════════════════════
 
     def search_by_title(self):
-        books = self._books()
-        b1 = input("Search Books by Title: ").lower()
+        b1    = input("Search Books by Title: ").lower()
         found = False
-        for book in books:
-            if b1 in book["title"].lower():
-                print(book_str(book))
+        for book in self.books:
+            if b1 in book.title.lower():
+                print(book)
                 found = True
         if not found:
             print("No matching books found")
 
     def search_by_author(self):
-        books = self._books()
-        b2 = input("Search Books by Author: ").lower()
+        b2    = input("Search Books by Author: ").lower()
         found = False
-        for book in books:
-            if b2 in book["author"].lower():
-                print(book_str(book))
+        for book in self.books:
+            if b2 in book.author.lower():
+                print(book)
                 found = True
         if not found:
             print("No matching books found")
 
     def search_by_genre(self):
-        books = self._books()
-        b3 = input("Search Books by Genre: ").lower()
+        b3    = input("Search Books by Genre: ").lower()
         found = False
-        for book in books:
-            if b3 in book["genre"].lower():
-                print(book_str(book))
+        for book in self.books:
+            if b3 in book.genre.lower():
+                print(book)
                 found = True
         if not found:
             print("No matching books found")
 
     def search_by_name(self):
-        members = self._members()
-        m1 = input("Search Members by Name: ").lower()
+        m1    = input("Search Members by Name: ").lower()
         found = False
-        for mem in members:
-            if m1 in mem["name"].lower():
-                print(member_str(mem))
+        for mem in self.members:
+            if m1 in mem.name.lower():
+                print(mem)
                 found = True
         if not found:
             print("No matching Member found")
 
 
-# ──────────────────────── LIBRARY CLASS ────────────────────────────
+# ─────────────────────────────────────────────────────────────
+#  LIBRARY CLASS  –  menus only, calls Actions methods
+# ─────────────────────────────────────────────────────────────
 
 class Library:
     def __init__(self):
@@ -529,14 +676,16 @@ class Library:
 
         if choice == "1":
             self.action.add_book()
-        if choice == "2":
+        elif choice == "2":
             self.action.view_book()
-        if choice == "3":
+        elif choice == "3":
             self.action.update_quantity()
-        if choice == "4":
+        elif choice == "4":
             self.action.remove_book()
-        if choice == "5":
+        elif choice == "5":
             return
+        else:
+            print("❌ Invalid choice!")
 
     def member_management(self):
         print("1. Register New Member")
@@ -549,14 +698,16 @@ class Library:
 
         if choice == "1":
             self.action.add_member()
-        if choice == "2":
+        elif choice == "2":
             self.action.view_member()
-        if choice == "3":
+        elif choice == "3":
             self.action.update_member()
-        if choice == "4":
+        elif choice == "4":
             self.action.remove_member()
-        if choice == "5":
+        elif choice == "5":
             return
+        else:
+            print("❌ Invalid choice!")
 
     def borrow_return(self):
         print("1. Borrow Book")
@@ -569,14 +720,16 @@ class Library:
 
         if choice == "1":
             self.action.borrow_book()
-        if choice == "2":
+        elif choice == "2":
             self.action.return_book()
-        if choice == "3":
+        elif choice == "3":
             self.action.active_borrowings()
-        if choice == "4":
+        elif choice == "4":
             self.action.check_overdue()
-        if choice == "5":
+        elif choice == "5":
             return
+        else:
+            print("❌ Invalid choice!")
 
     def Reports_Statistics(self):
         print("1. Library Summary")
@@ -590,16 +743,18 @@ class Library:
 
         if choice == "1":
             self.action.library_summery()
-        if choice == "2":
+        elif choice == "2":
             self.action.popular_books()
-        if choice == "3":
+        elif choice == "3":
             self.action.popular_member()
-        if choice == "4":
+        elif choice == "4":
             self.action.genre_wise()
-        if choice == "5":
+        elif choice == "5":
             self.action.monthly_borrow_report()
-        if choice == "6":
+        elif choice == "6":
             return
+        else:
+            print("❌ Invalid choice!")
 
     def search(self):
         print("---------- SEARCH ----------")
@@ -613,15 +768,21 @@ class Library:
 
         if choice == "1":
             self.action.search_by_title()
-        if choice == "2":
+        elif choice == "2":
             self.action.search_by_author()
-        if choice == "3":
+        elif choice == "3":
             self.action.search_by_genre()
-        if choice == "4":
+        elif choice == "4":
             self.action.search_by_name()
+        elif choice == "5":
+            return
+        else:
+            print("❌ Invalid choice!")
 
 
-# ─────────────────────── LIBRARY SYSTEM ────────────────────────────
+# ─────────────────────────────────────────────────────────────
+#  MAIN SYSTEM
+# ─────────────────────────────────────────────────────────────
 
 class LibrarySystem:
     def __init__(self):
@@ -629,8 +790,7 @@ class LibrarySystem:
 
     def mainmenu(self):
         while True:
-            print("==================== MAIN MENU ====================")
-            print("")
+            print("\n==================== MAIN MENU ====================")
             print("1. Book Management")
             print("2. Member Management")
             print("3. Borrowing & Returns")
@@ -651,12 +811,14 @@ class LibrarySystem:
             elif choice == "5":
                 self.library.search()
             elif choice == "6":
-                print("👋 Exiting system...")
+                print("👋 Exiting system. All data saved!")
                 break
             else:
                 print("❌ Invalid choice!")
 
 
-# ─────────────────────────── ENTRY POINT ───────────────────────────
+# ─────────────────────────────────────────────────────────────
+#  ENTRY POINT
+# ─────────────────────────────────────────────────────────────
 system = LibrarySystem()
 system.mainmenu()
